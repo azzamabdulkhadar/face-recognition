@@ -893,3 +893,223 @@ Identity decision
 ```
 
 Once this demo works, it can be expanded into the production EMS architecture with **admin-controlled enrollment, liveness detection, encrypted biometric templates, backend authorization, GPS validation, and attendance recording**.
+
+---
+
+# 31. Current Implementation Status (Update)
+
+> This section documents what the backend **actually implements today**, which has
+> grown beyond the original demo scope described above. Sections 1–30 remain the
+> original learning plan; this section is the source of truth for the running code.
+
+## 31.1 What changed vs. the original plan
+
+The original plan (section 1) explicitly excluded attendance. The backend now
+includes a **face-verified attendance module** on top of the employee + face
+recognition pipeline. The recognition logic is reused as-is: an attendance
+check-in/check-out is only recorded when the submitted embedding matches a
+registered face above the configured threshold.
+
+Additional hardening added since the plan was written:
+
+- `helmet` for security headers.
+- `express-rate-limit` (120 requests / 60s window).
+- `pino` + `pino-http` structured request logging.
+- Centralized error handling and a `/health` endpoint.
+- JSON body limit raised to `2mb` to accommodate embeddings.
+
+## 31.2 Actual project structure
+
+```text
+backend/
+├── src/
+│   ├── config/
+│   │   ├── database.ts        # MySQL pool + verifyDatabaseConnection()
+│   │   └── env.ts             # typed env (incl. FACE_MATCH_THRESHOLD)
+│   ├── controllers/
+│   │   ├── employee.controller.ts
+│   │   ├── face.controller.ts
+│   │   └── attendance.controller.ts   # NEW
+│   ├── db/
+│   │   └── schema.sql         # employees, employee_faces, attendance_events
+│   ├── middlewares/
+│   │   ├── errorHandler.ts
+│   │   └── validate.ts
+│   ├── routes/
+│   │   ├── employee.routes.ts
+│   │   ├── face.routes.ts
+│   │   └── attendance.routes.ts        # NEW
+│   ├── services/
+│   │   ├── employee.service.ts
+│   │   ├── face.service.ts
+│   │   └── attendance.service.ts       # NEW
+│   ├── utils/
+│   │   ├── asyncHandler.ts
+│   │   ├── errors.ts
+│   │   └── logger.ts
+│   ├── validators/
+│   │   ├── employee.validator.ts
+│   │   ├── face.validator.ts
+│   │   └── attendance.validator.ts     # NEW
+│   ├── app.ts
+│   └── server.ts
+├── .env
+├── .env.example
+├── package.json
+└── tsconfig.json
+```
+
+## 31.3 Face embedding model (now selected)
+
+The model/preprocessing has been finalized (previously a TODO in the plan):
+
+- Model: **MobileFaceNet** (TensorFlow Lite), run on-device in the Flutter apps.
+- Model version string stored with each face: `mobilefacenet-112-v1`.
+- Input: `1 x 112 x 112 x 3`, float32, normalized to `[-1, 1]`.
+- Output: 192-dimensional embedding, **L2-normalized** on-device.
+- Comparison metric: **cosine similarity**.
+- Default threshold: `FACE_MATCH_THRESHOLD=0.6`.
+
+Both the admin (registration) app and the employees (attendance) app use the
+identical model file and identical preprocessing so stored and freshly-captured
+embeddings live in the same vector space.
+
+## 31.4 Attendance database table
+
+A third table backs attendance. It is included in `src/db/schema.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS attendance_events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    employee_id INT NOT NULL,
+    event_type ENUM('check_in', 'check_out') NOT NULL,
+    similarity DECIMAL(6, 4) NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_attendance_employee
+        FOREIGN KEY (employee_id)
+        REFERENCES employees(id)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX idx_attendance_employee_time
+    ON attendance_events (employee_id, created_at);
+```
+
+> **Setup note / known pitfall:** if an existing database was created before the
+> attendance feature was added, this table will be missing and
+> `GET /api/attendance` (and any check-in) returns **500 `ER_NO_SUCH_TABLE`**.
+> Re-run `src/db/schema.sql` (the `CREATE TABLE IF NOT EXISTS` statements are
+> safe to run again) to add the table to an existing database.
+
+## 31.5 Attendance API
+
+### Record a check-in / check-out
+
+```http
+POST /api/attendance
+```
+
+```json
+{
+  "embedding": [0.12, -0.03, 0.08, "... 192 values ..."],
+  "event": "check_in"
+}
+```
+
+Backend flow:
+
+```text
+embedding + event
+      ↓
+recognizeFace(embedding)        (same cosine-similarity match as /faces/recognize)
+      ↓
+no match  → 401 "Face not recognized. Attendance not recorded." (nothing stored)
+match     → enforce order:
+              check_in  but already checked in   → 409 conflict
+              check_out but not checked in        → 409 conflict
+      ↓
+INSERT attendance_events (employee_id, event_type, similarity)
+      ↓
+201 { success, message, event, employee, similarity, recordedAt }
+```
+
+Success response:
+
+```json
+{
+  "success": true,
+  "message": "Azzam checked in",
+  "matched": true,
+  "event": "check_in",
+  "employee": { "id": 5, "name": "Azzam" },
+  "similarity": 0.8123,
+  "recordedAt": "2026-10-01T10:30:00.000Z"
+}
+```
+
+### List recent events
+
+```http
+GET /api/attendance?limit=20
+GET /api/attendance?employeeId=5&limit=20
+```
+
+`limit` is clamped to the range 1–200 (default 50). Events are returned
+newest-first.
+
+### Current status for an employee
+
+```http
+GET /api/attendance/:employeeId/status
+```
+
+```json
+{
+  "success": true,
+  "employeeId": 5,
+  "status": "checked_in",
+  "since": "2026-10-01T10:30:00.000Z"
+}
+```
+
+## 31.6 Full route list (current)
+
+```text
+GET    /health
+
+POST   /api/employees
+GET    /api/employees
+GET    /api/employees/:id
+DELETE /api/employees/:id
+
+POST   /api/faces/register
+POST   /api/faces/recognize
+GET    /api/faces/:employeeId
+DELETE /api/faces/:employeeId
+
+POST   /api/attendance
+GET    /api/attendance
+GET    /api/attendance/:employeeId/status
+```
+
+## 31.7 Environment variables (current)
+
+```env
+PORT=5000
+
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your_password
+DB_NAME=face_recognition_demo
+
+FACE_MATCH_THRESHOLD=0.6
+```
+
+## 31.8 Scripts
+
+```bash
+npm run dev     # tsx watch src/server.ts (hot reload)
+npm run build   # tsc  -> dist/
+npm run start   # node dist/server.js
+```

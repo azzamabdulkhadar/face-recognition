@@ -4,10 +4,12 @@ enum AttendanceEventType {
   checkOut;
 
   /// Wire value expected by the backend.
-  String get wire => this == AttendanceEventType.checkIn ? 'check_in' : 'check_out';
+  String get wire =>
+      this == AttendanceEventType.checkIn ? 'check_in' : 'check_out';
 
-  static AttendanceEventType fromWire(String value) =>
-      value == 'check_in' ? AttendanceEventType.checkIn : AttendanceEventType.checkOut;
+  static AttendanceEventType fromWire(String value) => value == 'check_in'
+      ? AttendanceEventType.checkIn
+      : AttendanceEventType.checkOut;
 
   String get label =>
       this == AttendanceEventType.checkIn ? 'Check in' : 'Check out';
@@ -33,11 +35,15 @@ class AttendanceRecord {
     final employee = json['employee'] as Map<String, dynamic>?;
     final rawSimilarity = json['similarity'];
     return AttendanceRecord(
-      event: AttendanceEventType.fromWire(json['event'] as String? ?? 'check_in'),
-      employeeId: (employee?['id'] as int?) ?? (json['employeeId'] as int? ?? 0),
+      event: AttendanceEventType.fromWire(
+        json['event'] as String? ?? 'check_in',
+      ),
+      employeeId:
+          (employee?['id'] as int?) ?? (json['employeeId'] as int? ?? 0),
       employeeName: (employee?['name'] as String?) ?? 'Employee',
-      similarity:
-          rawSimilarity == null ? null : (rawSimilarity as num).toDouble(),
+      similarity: rawSimilarity == null
+          ? null
+          : (rawSimilarity as num).toDouble(),
       recordedAt: json['recordedAt'] as String?,
     );
   }
@@ -85,9 +91,12 @@ class AttendanceEntry {
     return AttendanceEntry(
       id: json['id'] as int,
       employeeId: json['employeeId'] as int,
-      event: AttendanceEventType.fromWire(json['event'] as String? ?? 'check_in'),
-      similarity:
-          rawSimilarity == null ? null : (rawSimilarity as num).toDouble(),
+      event: AttendanceEventType.fromWire(
+        json['event'] as String? ?? 'check_in',
+      ),
+      similarity: rawSimilarity == null
+          ? null
+          : (rawSimilarity as num).toDouble(),
       recordedAt: json['recordedAt'] as String?,
     );
   }

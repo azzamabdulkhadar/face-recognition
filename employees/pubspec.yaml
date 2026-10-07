@@ -55,6 +55,16 @@ dependencies:
   # the embedding model expects.
   image: ^4.2.0
 
+  # Securely persist the login token and this device's registration UUID.
+  flutter_secure_storage: ^9.2.2
+
+  # Non-sensitive device metadata (model, manufacturer, OS) shown to the admin
+  # during device registration.
+  device_info_plus: ^10.1.2
+
+  # App version / build number sent with device registration.
+  package_info_plus: ^8.0.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

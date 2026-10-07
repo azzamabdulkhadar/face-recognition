@@ -40,9 +40,11 @@ The system has three parts:
 
 - **`employees/`** — a Flutter client (Android, iOS, web, desktop) that owns the camera, on-device face detection (Google ML Kit), and on-device face embedding (MobileFaceNet via TFLite). It never uploads raw camera frames for ordinary recognition — only the resulting embedding vector.
 - **`backend/`** — a Node.js + TypeScript + Express REST API that manages employees, stores one face embedding per employee, recognizes incoming embeddings by cosine similarity, and records attendance check-in / check-out events. Data lives in MySQL.
-- **`admin/`** — a placeholder for a future admin surface (enrollment approval, reporting).
+- **`admin/`** — a separate Flutter app for administrators: create/list/delete employees, register or remove an employee's face (camera + on-device embedding), and test recognition against the similarity threshold.
 
-Face processing happens on the device. The backend receives a numeric embedding, compares it against registered embeddings, and returns the best match above a configurable similarity threshold.
+The two Flutter apps are intentionally split so the employee-facing app only exposes self-service check-in / check-out, while employee and face management live in the admin app.
+
+Face processing happens on the device (both the employee and admin apps). The backend receives a numeric embedding, compares it against registered embeddings, and returns the best match above a configurable similarity threshold.
 
 ---
 
@@ -59,7 +61,7 @@ Face processing happens on the device. The backend receives a numeric embedding,
 - **dotenv** — environment configuration
 - **tsx** — TypeScript dev runner / watch mode
 
-### Client (`employees/`)
+### Clients (`employees/` and `admin/`)
 - **Flutter** / **Dart** (SDK ^3.11)
 - **camera** — live preview and frame capture
 - **google_mlkit_face_detection** — on-device face detection, landmarks, head angles
@@ -123,7 +125,7 @@ Errors flow through a centralized error handler; a `/health` endpoint is provide
 
 ```
 companyapp/
-├── admin/                     # Placeholder for future admin app
+├── admin/                     # Flutter admin app (employee + face management, recognition test)
 ├── backend/                   # Node.js + TypeScript + Express API
 │   ├── src/
 │   │   ├── app.ts             # Express app: middleware + route wiring
@@ -149,12 +151,22 @@ companyapp/
 │   ├── package.json
 │   └── tsconfig.json
 │
-└── employees/                 # Flutter client
+├── employees/                 # Flutter employee app (self-service check-in / check-out)
+│   ├── lib/
+│   │   ├── main.dart
+│   │   ├── config.dart         # default backend base URL
+│   │   ├── models/             # employee, attendance
+│   │   ├── screens/            # home, attendance, face_capture
+│   │   └── services/           # api_client, face_camera, face_embedder
+│   ├── assets/models/          # mobilefacenet.tflite (embedding model)
+│   └── pubspec.yaml
+│
+└── admin/                     # Flutter admin app (employee + face management)
     ├── lib/
     │   ├── main.dart
     │   ├── config.dart         # default backend base URL
-    │   ├── models/             # employee, face_info, attendance, results
-    │   ├── screens/            # home, register_face, recognize, attendance, employees
+    │   ├── models/             # employee, face_info, recognition_result
+    │   ├── screens/            # home, employees, register_face, recognize, face_capture
     │   └── services/           # api_client, face_camera, face_embedder, embedding_generator
     ├── assets/models/          # mobilefacenet.tflite (embedding model)
     └── pubspec.yaml
@@ -259,13 +271,20 @@ npm start                 # node dist/server.js
 
 > Never commit `.env` — it is already git-ignored.
 
-### 3. Flutter client
+### 3. Flutter clients
+Employee self-service app (check-in / check-out):
 ```bash
 cd employees
 flutter pub get
 flutter run
 ```
-The client defaults to `http://localhost:5000`, and to `http://10.0.2.2:5000` on the Android emulator (see `lib/config.dart`). Adjust from the in-app settings if your backend runs elsewhere.
+Admin app (manage employees, register faces, test recognition):
+```bash
+cd admin
+flutter pub get
+flutter run
+```
+Both apps default to `http://localhost:5000`, and to `http://10.0.2.2:5000` on the Android emulator (see each app's `lib/config.dart`). Adjust from the in-app settings if your backend runs elsewhere. They share the same MobileFaceNet model, so use the same `assets/models/mobilefacenet.tflite` in each.
 
 ### 4. Test the API (optional)
 Use Postman to create employees, register embeddings, and verify recognition returns the right match — and that an unknown face returns no match.
@@ -279,7 +298,7 @@ Use Postman to create employees, register embeddings, and verify recognition ret
 - One registered face embedding per employee (duplicate registration is rejected)
 - Face recognition by cosine similarity against a configurable threshold
 - Attendance check-in / check-out events and status lookup
-- On-device face detection and embedding generation in the Flutter client
+- On-device face detection and embedding generation in both Flutter apps
 - Basic hardening: Helmet headers, rate limiting, request validation, structured logging
 
 **Intentionally out of scope for now:**
@@ -311,7 +330,7 @@ Embeddings are currently stored as JSON in MySQL purely to keep the learning pro
 
 - **Liveness detection** — challenge-response (blink, head turn) using ML Kit landmarks and eye-open probabilities, plus anti-spoofing checks.
 - **Face quality gating** — enforce exactly one face, sufficient size, centering, lighting, low blur, and reasonable head angle before generating an embedding.
-- **Admin app** — flesh out `admin/` for enrollment approval, employee management, and attendance reports.
+- **Admin app** — build on the `admin/` app with enrollment approval, authentication, and attendance reports.
 - **Secure biometric storage** — encryption at rest, key management, secure deletion.
 - **Auth & authorization** — authenticated sessions, role-based access, server-side identity enforcement.
 - **Attendance features** — GPS validation, shift rules, richer reporting and exports.

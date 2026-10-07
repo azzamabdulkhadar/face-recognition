@@ -5,6 +5,7 @@ import { validate } from '../middlewares/validate.js';
 import {
   createEmployeeSchema,
   employeeIdParamSchema,
+  setPasswordSchema,
 } from '../validators/employee.validator.js';
 
 export const employeeRouter = Router();
@@ -27,4 +28,12 @@ employeeRouter.delete(
   '/:id',
   validate(employeeIdParamSchema, 'params'),
   asyncHandler(controller.remove),
+);
+
+// Admin: set / reset an employee's login password.
+employeeRouter.post(
+  '/:id/password',
+  validate(employeeIdParamSchema, 'params'),
+  validate(setPasswordSchema, 'body'),
+  asyncHandler(controller.setPassword),
 );

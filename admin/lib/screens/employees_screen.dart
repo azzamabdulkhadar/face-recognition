@@ -46,7 +46,11 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
     );
     if (result == null) return;
     try {
-      await widget.api.createEmployee(name: result.name, email: result.email);
+      await widget.api.createEmployee(
+        name: result.name,
+        email: result.email,
+        password: result.password,
+      );
       _reload();
     } on ApiException catch (e) {
       _showError(e);
@@ -251,9 +255,10 @@ class _ErrorView extends StatelessWidget {
 }
 
 class _NewEmployee {
-  const _NewEmployee(this.name, this.email);
+  const _NewEmployee(this.name, this.email, this.password);
   final String name;
   final String? email;
+  final String? password;
 }
 
 class _CreateEmployeeDialog extends StatefulWidget {
@@ -267,17 +272,28 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _email = TextEditingController();
+  final _password = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
     _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
   void _submit() {
     if (_formKey.currentState?.validate() != true) return;
-    Navigator.pop(context, _NewEmployee(_name.text.trim(), _email.text.trim()));
+    final email = _email.text.trim();
+    final password = _password.text;
+    Navigator.pop(
+      context,
+      _NewEmployee(
+        _name.text.trim(),
+        email.isEmpty ? null : email,
+        password.isEmpty ? null : password,
+      ),
+    );
   }
 
   @override
@@ -298,14 +314,34 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
             ),
             TextFormField(
               controller: _email,
-              decoration: const InputDecoration(labelText: 'Email (optional)'),
+              decoration: const InputDecoration(
+                labelText: 'Email (required for login)',
+              ),
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return null;
+                final value = v?.trim() ?? '';
+                // Email required if a password is set (needed to log in).
+                if (value.isEmpty) {
+                  return _password.text.isNotEmpty
+                      ? 'Email is required to set a login password'
+                      : null;
+                }
                 final ok = RegExp(
                   r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-                ).hasMatch(v.trim());
+                ).hasMatch(value);
                 return ok ? null : 'Invalid email';
+              },
+            ),
+            TextFormField(
+              controller: _password,
+              decoration: const InputDecoration(
+                labelText: 'Login password (optional)',
+                helperText: 'At least 6 characters. Can be set later.',
+              ),
+              obscureText: true,
+              validator: (v) {
+                if (v == null || v.isEmpty) return null;
+                return v.length < 6 ? 'At least 6 characters' : null;
               },
             ),
           ],

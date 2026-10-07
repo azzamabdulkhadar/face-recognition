@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import { pinoHttp } from 'pino-http';
 import { logger } from './utils/logger.js';
 import { employeeRouter } from './routes/employee.routes.js';
+import { authRouter } from './routes/auth.routes.js';
+import { deviceRouter } from './routes/device.routes.js';
 import { faceRouter } from './routes/face.routes.js';
 import { attendanceRouter } from './routes/attendance.routes.js';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
@@ -36,7 +38,9 @@ export function createApp() {
   });
 
   // Feature routes.
+  app.use('/api/auth', authRouter);
   app.use('/api/employees', employeeRouter);
+  app.use('/api/devices', deviceRouter);
   app.use('/api/faces', faceRouter);
   app.use('/api/attendance', attendanceRouter);
 

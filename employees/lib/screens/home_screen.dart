@@ -2,65 +2,28 @@ import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
 import 'attendance_screen.dart';
-import 'employees_screen.dart';
-import 'recognize_screen.dart';
+import 'register_face_screen.dart';
 
-/// Landing screen with the two main flows and a place to configure the
-/// backend URL.
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.initialBaseUrl});
+/// Employee self-service landing screen: face-verified check-in / check-out.
+///
+/// Reached only after the employee has logged in AND this device is an ACTIVE
+/// (admin-approved) device. The authenticated [api] is shared from the app
+/// shell so requests carry the login token.
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({
+    super.key,
+    required this.initialBaseUrl,
+    required this.api,
+    required this.employeeName,
+    required this.onLogout,
+  });
 
   final String initialBaseUrl;
+  final ApiClient api;
+  final String employeeName;
+  final VoidCallback onLogout;
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  late String _baseUrl = widget.initialBaseUrl;
-  late ApiClient _api = ApiClient(baseUrl: _baseUrl);
-
-  @override
-  void dispose() {
-    _api.dispose();
-    super.dispose();
-  }
-
-  Future<void> _editBaseUrl() async {
-    final controller = TextEditingController(text: _baseUrl);
-    final newUrl = await showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Backend URL'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: 'http://10.0.2.2:5000'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (newUrl == null || newUrl.isEmpty || newUrl == _baseUrl) return;
-    final old = _api;
-    setState(() {
-      _baseUrl = newUrl.endsWith('/')
-          ? newUrl.substring(0, newUrl.length - 1)
-          : newUrl;
-      _api = ApiClient(baseUrl: _baseUrl);
-    });
-    old.dispose();
-  }
-
-  void _open(Widget screen) {
+  void _open(BuildContext context, Widget screen) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 
@@ -68,12 +31,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Face Recognition Demo'),
+        title: const Text('Employee Attendance'),
         actions: [
           IconButton(
-            tooltip: 'Backend URL',
-            icon: const Icon(Icons.settings),
-            onPressed: _editBaseUrl,
+            tooltip: 'Sign out',
+            icon: const Icon(Icons.logout),
+            onPressed: onLogout,
           ),
         ],
       ),
@@ -82,33 +45,24 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Card(
             child: ListTile(
-              leading: const Icon(Icons.link),
-              title: const Text('Backend'),
-              subtitle: Text(_baseUrl),
-              trailing: const Icon(Icons.edit),
-              onTap: _editBaseUrl,
+              leading: const Icon(Icons.verified_user),
+              title: Text(employeeName),
+              subtitle: const Text('Signed in · this device is trusted'),
             ),
           ),
           const SizedBox(height: 12),
           _ActionCard(
-            icon: Icons.people,
-            title: 'Employees',
-            subtitle: 'Create, view, and delete employees. Register a face.',
-            onTap: () => _open(EmployeesScreen(api: _api)),
-          ),
-          const SizedBox(height: 12),
-          _ActionCard(
-            icon: Icons.center_focus_strong,
-            title: 'Recognize',
-            subtitle: 'Simulate a capture and identify the employee.',
-            onTap: () => _open(RecognizeScreen(api: _api)),
+            icon: Icons.face_retouching_natural,
+            title: 'Register your face',
+            subtitle: 'Enroll your face once so attendance can recognize you.',
+            onTap: () => _open(context, RegisterFaceScreen(api: api)),
           ),
           const SizedBox(height: 12),
           _ActionCard(
             icon: Icons.how_to_reg,
             title: 'Check in / Check out',
             subtitle: 'Record attendance verified by face recognition.',
-            onTap: () => _open(AttendanceScreen(api: _api)),
+            onTap: () => _open(context, AttendanceScreen(api: api)),
           ),
         ],
       ),
