@@ -18,4 +18,8 @@ export const env = {
     database: required('DB_NAME', 'face_recognition_demo'),
   },
   faceMatchThreshold: Number(process.env.FACE_MATCH_THRESHOLD ?? 0.6),
+  // Secret used to sign employee login JWTs. Override in production via .env.
+  jwtSecret: process.env.JWT_SECRET ?? 'dev-insecure-change-me',
+  // How long a login token stays valid.
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '30d',
 };

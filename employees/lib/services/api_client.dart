@@ -3,29 +3,97 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/attendance.dart';
+import '../models/device.dart';
 import '../models/employee.dart';
 import '../models/face_info.dart';
-import '../models/recognition_result.dart';
+import '../services/auth_store.dart';
+import '../services/device_identity.dart';
 import 'api_exception.dart';
 
-/// Thin client over the Face Recognition Demo REST API.
+/// Thin client over the Face Recognition Demo REST API, scoped to employee
+/// self-service: reading the employee directory (for names in history) and
+/// recording face-verified check-in / check-out events.
 ///
 /// The [baseUrl] should point at the backend host without a trailing slash,
-/// e.g. `http://10.0.2.2:5000` for the Android emulator or
+/// e.g. `http://192.168.1.40:5000` for the Android emulator or
 /// `http://localhost:5000` for web/desktop.
 class ApiClient {
-  ApiClient({required this.baseUrl, http.Client? client})
+  ApiClient({required this.baseUrl, http.Client? client, this.authToken})
     : _client = client ?? http.Client();
 
   final String baseUrl;
   final http.Client _client;
 
-  static const _jsonHeaders = {'Content-Type': 'application/json'};
+  /// JWT attached as `Authorization: Bearer` to every request when present.
+  String? authToken;
+
+  Map<String, String> get _headers {
+    final h = <String, String>{'Content-Type': 'application/json'};
+    if (authToken != null && authToken!.isNotEmpty) {
+      h['Authorization'] = 'Bearer $authToken';
+    }
+    return h;
+  }
 
   Uri _uri(String path) => Uri.parse('$baseUrl/api$path');
 
   // ---------------------------------------------------------------------------
-  // Employees
+  // Auth
+  // ---------------------------------------------------------------------------
+
+  /// Log in with email + password. On success the returned token is also
+  /// applied to this client for subsequent requests.
+  Future<({String token, AuthEmployee employee})> login({
+    required String email,
+    required String password,
+  }) async {
+    final res = await _post('/auth/login', {
+      'email': email,
+      'password': password,
+    });
+    final token = res['token'] as String;
+    final employee = AuthEmployee.fromJson(
+      res['employee'] as Map<String, dynamic>,
+    );
+    authToken = token;
+    return (token: token, employee: employee);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Devices
+  // ---------------------------------------------------------------------------
+
+  /// Ask the backend for this device's trust status (called after login).
+  Future<({DeviceStatus status, DeviceInfo? device})> verifyDevice(
+    String deviceRegistrationId,
+  ) async {
+    final res = await _post('/devices/verify', {
+      'deviceRegistrationId': deviceRegistrationId,
+    });
+    final deviceJson = res['device'];
+    return (
+      status: DeviceStatus.fromWire(res['status'] as String?),
+      device: deviceJson == null
+          ? null
+          : DeviceInfo.fromJson(deviceJson as Map<String, dynamic>),
+    );
+  }
+
+  /// Submit (or re-submit) the current device for admin approval.
+  Future<DeviceInfo> registerDevice(DeviceDetails details) async {
+    final res = await _post('/devices/register', {
+      'deviceRegistrationId': details.registrationId,
+      if (details.platform != null) 'platform': details.platform,
+      if (details.model != null) 'deviceModel': details.model,
+      if (details.manufacturer != null) 'manufacturer': details.manufacturer,
+      if (details.osVersion != null) 'osVersion': details.osVersion,
+      if (details.appVersion != null) 'appVersion': details.appVersion,
+    });
+    return DeviceInfo.fromJson(res['device'] as Map<String, dynamic>);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Employees (read-only: used to label attendance history with names)
   // ---------------------------------------------------------------------------
 
   Future<List<Employee>> listEmployees() async {
@@ -36,23 +104,14 @@ class ApiClient {
         .toList(growable: false);
   }
 
-  Future<Employee> createEmployee({required String name, String? email}) async {
-    final body = <String, dynamic>{'name': name};
-    if (email != null && email.trim().isNotEmpty) {
-      body['email'] = email.trim();
-    }
-    final res = await _post('/employees', body);
-    return Employee.fromJson(res['employee'] as Map<String, dynamic>);
-  }
-
-  Future<void> deleteEmployee(int id) async {
-    await _delete('/employees/$id');
-  }
-
   // ---------------------------------------------------------------------------
-  // Faces
+  // Faces (self-service registration: one face per employee)
   // ---------------------------------------------------------------------------
 
+  /// Register a face [embedding] for [employeeId].
+  ///
+  /// Throws an [ApiException] with status 404 when the employee does not exist,
+  /// or 409 when the employee already has a registered face.
   Future<FaceInfo> registerFace({
     required int employeeId,
     required List<double> embedding,
@@ -69,11 +128,6 @@ class ApiClient {
     return FaceInfo.fromJson(res['face'] as Map<String, dynamic>);
   }
 
-  Future<RecognitionResult> recognizeFace(List<double> embedding) async {
-    final res = await _post('/faces/recognize', {'embedding': embedding});
-    return RecognitionResult.fromJson(res);
-  }
-
   /// Returns the registered face for an employee, or `null` if none exists.
   Future<FaceInfo?> getFace(int employeeId) async {
     try {
@@ -83,10 +137,6 @@ class ApiClient {
       if (e.statusCode == 404) return null;
       rethrow;
     }
-  }
-
-  Future<void> deleteFace(int employeeId) async {
-    await _delete('/faces/$employeeId');
   }
 
   // ---------------------------------------------------------------------------
@@ -135,15 +185,11 @@ class ApiClient {
   // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> _get(String path) =>
-      _send(() => _client.get(_uri(path), headers: _jsonHeaders));
+      _send(() => _client.get(_uri(path), headers: _headers));
 
   Future<Map<String, dynamic>> _post(String path, Object body) => _send(
-    () =>
-        _client.post(_uri(path), headers: _jsonHeaders, body: jsonEncode(body)),
+    () => _client.post(_uri(path), headers: _headers, body: jsonEncode(body)),
   );
-
-  Future<Map<String, dynamic>> _delete(String path) =>
-      _send(() => _client.delete(_uri(path), headers: _jsonHeaders));
 
   Future<Map<String, dynamic>> _send(
     Future<http.Response> Function() request,

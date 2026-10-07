@@ -8,9 +8,10 @@ import '../services/embedding_generator.dart';
 
 /// Simulates capturing a face and asks the backend to recognize it.
 ///
-/// Because there is no real camera yet, you pick which employee to "stand in
-/// front of the camera" (or an unknown person) and the screen generates an
-/// embedding from that identity, then sends it to /api/faces/recognize.
+/// Because there is no real camera step here, you pick which employee to "stand
+/// in front of the camera" (or an unknown person) and the screen generates an
+/// embedding from that identity, then sends it to /api/faces/recognize. This is
+/// an admin tool for testing recognition and tuning the similarity threshold.
 class RecognizeScreen extends StatefulWidget {
   const RecognizeScreen({super.key, required this.api});
 
